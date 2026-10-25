@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Lumina - AI Palm Gesture Controlled Smart Light</title>
+  <meta name="description" content="Control ambient lighting with real-time AI hand gesture recognition on mobile, tablet, and desktop. Open palm turns the light ON, closed palm turns the light OFF.">
+  <meta name="theme-color" content="#07090e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💡</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  
+  <!-- MediaPipe Hands & Camera Utils CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body class="light-off view-split" id="bodyRoot">
+
+  <!-- Ambient Room Lighting Glow Backdrop -->
+  <div class="ambient-room-glow" id="ambientRoomGlow"></div>
+  <div class="light-cone" id="lightCone"></div>
+  <div class="room-floor" id="roomFloor"></div>
+
+  <!-- Header Navigation -->
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="brand-logo" id="brandLogo">
+        <span class="logo-icon">💡</span>
+        <span class="logo-text">LUMINA <span class="logo-tag">VISION</span></span>
+      </div>
+      <div class="system-status-pill" id="systemStatusPill">
+        <span class="status-indicator" id="statusIndicator"></span>
+        <span class="status-text" id="statusText">Initializing AI...</span>
+      </div>
+    </div>
+
+    <!-- Top Action Bar -->
+    <div class="header-actions">
+      <!-- Quick instructions pill (Desktop / Tablets) -->
+      <div class="gesture-guide-pill" id="gestureGuidePill">
+        <span class="guide-item"><span class="guide-icon">🖐️</span> Palm: <strong>ON</strong></span>
+        <span class="guide-divider">•</span>
+        <span class="guide-item"><span class="guide-icon">✊</span> Fist: <strong>OFF</strong></span>
+      </div>
+
+      <!-- Connect From Phone / Other Device Button -->
+      <button class="icon-btn-pill" id="connectModalBtn" title="Connect from Phone or Other Device" aria-label="Connect Device">
+        <span class="btn-icon">📱</span>
+        <span class="pill-btn-text">Connect Phone</span>
+      </button>
+
+      <!-- Sound Toggle -->
+      <button class="icon-btn" id="soundToggleBtn" title="Toggle Sound Effects" aria-label="Toggle Sound Effects">
+        <svg id="soundIconOn" class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        <svg id="soundIconOff" class="svg-icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <line x1="23" y1="9" x2="17" y2="15"></line>
+          <line x1="17" y1="9" x2="23" y2="15"></line>
+        </svg>
+      </button>
+
+      <!-- Help / Guide Button -->
+      <button class="icon-btn" id="helpModalBtn" title="How it Works" aria-label="Help & Guide">
+        <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile Segmented View Switcher (Visible on Phones & Small Tablets) -->
+  <nav class="mobile-view-nav" id="mobileViewNav" aria-label="View Mode Switcher">
+    <div class="segmented-control">
+      <button class="segment-btn active" data-view="split" id="segSplit">
+        <span>⚡ Dual View</span>
+      </button>
+      <button class="segment-btn" data-view="lamp" id="segLamp">
+        <span>💡 Lamp Only</span>
+      </button>
+      <button class="segment-btn" data-view="vision" id="segVision">
+        <span>📷 Camera HUD</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Floating Mobile Status Bar (Always shows state on phones) -->
+  <div class="mobile-floating-status" id="mobileFloatingStatus">
+    <div class="m-status-left">
+      <span class="m-light-orb" id="mobileLightOrb"></span>
+      <span class="m-state-text" id="mobileStateText">Light: OFF</span>
+    </div>
+    <div class="m-status-right">
+      <span class="m-gesture-pill" id="mobileGesturePill">Waiting Hand</span>
+    </div>
+  </div>
+
+  <!-- Insecure Context Mobile Banner (Shown if phone connects over plain HTTP) -->
+  <div class="insecure-context-banner hidden" id="insecureBanner">
+    <div class="banner-content">
+      <span class="banner-icon">⚠️</span>
+      <p>
+        Mobile browsers require <strong>HTTPS</strong> for camera access. 
+        <a href="#" id="insecureSwitchHttpsLink">Switch to Secure HTTPS (Recommended)</a>
+      </p>
+      <button class="banner-close" id="closeInsecureBannerBtn">&times;</button>
+    </div>
+  </div>
+
+  <!-- Main Showcase Container -->
+  <main class="main-stage" id="mainStage">
+    
+    <!-- Central Lamp Display Section -->
+    <section class="lamp-stage-section" id="lampStageSection">
+      
+      <!-- Pendant Cord & Fixture -->
+      <div class="lamp-assembly" id="lampAssembly">
+        <div class="ceiling-mount"></div>
+        <div class="pendant-cord"></div>
+        <div class="pendant-socket">
+          <div class="socket-ring"></div>
+        </div>
+        
+        <!-- The Realistic Glowing Pendant Bulb / Lamp -->
+        <div class="lamp-globe" id="lampGlobe" title="Tap lamp to toggle">
+          <div class="bulb-glass-specular"></div>
+          <div class="filament-cluster" id="filamentCluster">
+            <div class="filament-wire filament-1"></div>
+            <div class="filament-wire filament-2"></div>
+            <div class="filament-wire filament-3"></div>
+            <div class="filament-core" id="filamentCore"></div>
+          </div>
+          <div class="bulb-inner-glow" id="bulbInnerGlow"></div>
+          <div class="standby-led" id="standbyLed"></div>
+        </div>
+
+        <!-- Volumetric Beam Emanation -->
+        <div class="volumetric-beam" id="volumetricBeam"></div>
+      </div>
+
+      <!-- State Announcement Card (Floating underneath lamp) -->
+      <div class="lamp-status-banner" id="lampStatusBanner">
+        <div class="light-state-badge" id="lightStateBadge">
+          <span class="state-icon" id="stateIcon">🌑</span>
+          <span class="state-label" id="stateLabel">LIGHT IS OFF</span>
+        </div>
+        <p class="state-hint" id="stateHint">Show your open palm to illuminate</p>
+      </div>
+
+      <!-- Physical 3D Style Manual Toggle Switch -->
+      <div class="switch-panel-wrapper">
+        <div class="switch-panel">
+          <span class="switch-tag">OFF</span>
+          <label class="rocker-switch" for="manualToggleSwitch" title="Click or tap to manually toggle light">
+            <input type="checkbox" id="manualToggleSwitch" aria-label="Manual Light Toggle">
+            <span class="rocker-slider">
+              <span class="rocker-handle">
+                <span class="handle-dot"></span>
+              </span>
+            </span>
+          </label>
+          <span class="switch-tag">ON</span>
+        </div>
+        <div class="switch-caption">Manual Override</div>
+      </div>
+    </section>
+
+    <!-- Side Control Hub & Camera HUD -->
+    <aside class="vision-hud-panel" id="visionHudPanel">
+      
+      <!-- Camera Feed Card -->
+      <div class="hud-card camera-card" id="cameraCard">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="radar-dot active" id="cameraRadarDot"></span>
+            <h2 class="card-title">Vision Feed</h2>
+          </div>
+          <div class="card-badges">
+            <span class="fps-badge" id="fpsBadge">-- FPS</span>
+            
+            <!-- Camera Flip Button (Front / Rear for phones & tablets) -->
+            <button class="hud-mini-btn" id="flipCameraBtn" title="Switch between Front and Back Camera">
+              <span class="btn-icon">🔄</span> Flip
+            </button>
+
+            <!-- Video Mirror Button -->
+            <button class="hud-mini-btn" id="toggleMirrorBtn" title="Toggle Mirror View">
+              Mirror
+            </button>
+
+            <!-- Skeleton Toggle Button -->
+            <button class="hud-mini-btn active" id="toggleOverlayBtn" title="Toggle AI Hand Skeleton Overlay">
+              Skeleton
+            </button>
+          </div>
+        </div>
+
+        <!-- Video & AI Skeleton Canvas Container -->
+        <div class="video-container" id="videoContainer">
+          <video id="webcamVideo" playsinline webkit-playsinline muted autoplay></video>
+          <canvas id="handCanvas"></canvas>
+          
+          <!-- Crosshair and scanline sci-fi overlay -->
+          <div class="vision-grid-overlay"></div>
+          <div class="scanline"></div>
+
+          <!-- Camera Startup Prompt (shown if permission needed or camera off) -->
+          <div class="camera-prompt-overlay" id="cameraPromptOverlay">
+            <div class="camera-prompt-content">
+              <div class="prompt-icon">📷</div>
+              <h3>Camera Access</h3>
+              <p id="cameraPromptMsg">Allow camera to detect your palm gestures in real time.</p>
+              <button class="btn btn-primary" id="startCameraBtn">
+                <span class="btn-icon">⚡</span> Enable Camera
+              </button>
+              <button class="btn btn-ghost" id="demoModeBtn">
+                Try Gesture Simulation
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Gesture HUD Reticle -->
+          <div class="gesture-reticle" id="gestureReticle">
+            <span class="reticle-corner tl"></span>
+            <span class="reticle-corner tr"></span>
+            <span class="reticle-corner bl"></span>
+            <span class="reticle-corner br"></span>
+            <div class="reticle-label" id="reticleLabel">NO HAND</div>
+          </div>
+        </div>
+
+        <!-- Live Telemetry Bar -->
+        <div class="camera-telemetry">
+          <div class="telemetry-item">
+            <span class="telemetry-label">Hand State</span>
+            <span class="telemetry-value" id="handStateValue">Searching...</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">Palm Openness</span>
+            <span class="telemetry-value" id="opennessValue">0%</span>
+          </div>
+        </div>
+
+        <!-- Palm Openness Progress Meter -->
+        <div class="meter-wrapper">
+          <div class="meter-labels">
+            <span>Fist (OFF)</span>
+            <span id="meterCenterThreshold">Threshold</span>
+            <span>Palm (ON)</span>
+          </div>
+          <div class="meter-track">
+            <div class="meter-fill" id="opennessMeterFill" style="width: 0%;"></div>
+            <div class="meter-marker" id="meterThresholdMarker"></div>
+          </div>
+        </div>
+
+        <!-- 5 Fingers Extension Micro-Indicators -->
+        <div class="fingers-status-row" id="fingersStatusRow">
+          <div class="finger-pill" id="fingerThumb" title="Thumb">
+            <span class="finger-dot"></span>
+            <span class="finger-name">THM</span>
+          </div>
+          <div class="finger-pill" id="fingerIndex" title="Index Finger">
+            <span class="finger-dot"></span>
+            <span class="finger-name">IDX</span>
+          </div>
+          <div class="finger-pill" id="fingerMiddle" title="Middle Finger">
+            <span class="finger-dot"></span>
+            <span class="finger-name">MID</span>
+          </div>
+          <div class="finger-pill" id="fingerRing" title="Ring Finger">
+            <span class="finger-dot"></span>
+            <span class="finger-name">RNG</span>
+          </div>
+          <div class="finger-pill" id="fingerPinky" title="Pinky Finger">
+            <span class="finger-dot"></span>
+            <span class="finger-name">PNK</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lighting Customization & Atmosphere Card -->
+      <div class="hud-card controls-card" id="controlsCard">
+        <h2 class="card-title">Atmosphere & Lighting</h2>
+
+        <!-- Color Temperature Themes -->
+        <div class="control-group">
+          <label class="control-label">Light Ambience Theme</label>
+          <div class="theme-chips-grid">
+            <button class="theme-chip active" data-color="#ffb86c" data-temp="warm" id="themeWarm">
+              <span class="chip-color" style="background: radial-gradient(circle, #ffe0a3, #ffb86c);"></span>
+              <span>Edison Warm</span>
+            </button>
+            <button class="theme-chip" data-color="#8be9fd" data-temp="cyber" id="themeCyber">
+              <span class="chip-color" style="background: radial-gradient(circle, #b5f5ff, #8be9fd);"></span>
+              <span>Cyber Cyan</span>
+            </button>
+            <button class="theme-chip" data-color="#ff79c6" data-temp="sunset" id="themeSunset">
+              <span class="chip-color" style="background: radial-gradient(circle, #ffb3e1, #ff79c6);"></span>
+              <span>Neon Sunset</span>
+            </button>
+            <button class="theme-chip" data-color="#50fa7b" data-temp="emerald" id="themeEmerald">
+              <span class="chip-color" style="background: radial-gradient(circle, #99ffb4, #50fa7b);"></span>
+              <span>Emerald Auric</span>
+            </button>
+            <button class="theme-chip" data-color="#f8f8f2" data-temp="pure" id="themePure">
+              <span class="chip-color" style="background: radial-gradient(circle, #ffffff, #e2e8f0);"></span>
+              <span>Pure Studio</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Brightness Slider -->
+        <div class="control-group">
+          <div class="slider-header">
+            <label class="control-label" for="brightnessRange">Light Intensity</label>
+            <span class="slider-val" id="brightnessDisplay">100%</span>
+          </div>
+          <input type="range" min="15" max="100" value="100" class="styled-range" id="brightnessRange">
+        </div>
+
+        <!-- Gesture Sensitivity Slider -->
+        <div class="control-group">
+          <div class="slider-header">
+            <label class="control-label" for="sensitivityRange">Gesture Sensitivity</label>
+            <span class="slider-val" id="sensitivityDisplay">Balanced</span>
+          </div>
+          <input type="range" min="30" max="70" value="50" class="styled-range" id="sensitivityRange">
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Connect From Phone / Other Devices Modal -->
+  <dialog class="custom-modal" id="connectModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">📱 Open on Phone or Other Devices</h3>
+        <button class="modal-close-btn" id="closeConnectModalBtn" aria-label="Close Modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="connect-desc">Connect your phone or tablet on the same Wi-Fi network to control the light with your phone's camera:</p>
+        
+        <div class="qr-showcase">
+          <div class="qr-frame">
+            <img id="qrCodeImg" alt="QR Code to open on phone" class="qr-image" src="">
+          </div>
+          <div class="qr-caption">Scan with your phone's camera app</div>
+        </div>
+
+        <div class="network-links-list">
+          <div class="link-item global-highlight">
+            <div class="link-info">
+              <span class="link-badge secure-global">🌐 Universal Live Link (Works on ALL Other PCs & Phones)</span>
+              <code class="network-url highlight-url" id="globalNetworkUrl">https://des-templates-labour-sally.trycloudflare.com</code>
+            </div>
+            <button class="btn btn-primary copy-btn" id="copyGlobalBtn" data-target="globalNetworkUrl">Copy Link</button>
+          </div>
+
+          <div class="link-item">
+            <div class="link-info">
+              <span class="link-badge">Local Wi-Fi Network</span>
+              <code class="network-url" id="httpNetworkUrl">http://10.150.195.54:8080</code>
+            </div>
+            <button class="btn btn-ghost copy-btn" id="copyHttpBtn" data-target="httpNetworkUrl">Copy</button>
+          </div>
+        </div>
+
+        <div class="modal-tips">
+          <h4>💡 Why didn't the local link open on other PCs?</h4>
+          <ul>
+            <li>Mobile hotspots and Wi-Fi networks block direct communication between connected PCs (Client/AP Isolation).</li>
+            <li>Use the <strong>Universal Live Link</strong> above — it opens instantly on any other PC, laptop, or phone anywhere in the world!</li>
+            <li>Camera access works immediately on other PCs with no warning or configuration needed.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="closeConnectDoneBtn">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Help & Instructions Modal Dialog -->
+  <dialog class="custom-modal" id="helpModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">🖐️ How Lumina Gesture Control Works</h3>
+        <button class="modal-close-btn" id="closeHelpModalBtn" aria-label="Close Help">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="gesture-demo-grid">
+          <div class="demo-card on-demo">
+            <div class="demo-icon-wrapper">
+              <span class="demo-gesture-emoji">🖐️</span>
+            </div>
+            <h4>Open Palm</h4>
+            <p>Spread your fingers open facing the camera.</p>
+            <div class="demo-result on-badge">LIGHT TURNS ON 💡</div>
+          </div>
+          <div class="demo-card off-demo">
+            <div class="demo-icon-wrapper">
+              <span class="demo-gesture-emoji">✊</span>
+            </div>
+            <h4>Closed Palm (Fist)</h4>
+            <p>Curl your fingers inwards into a fist or tight ball.</p>
+            <div class="demo-result off-badge">LIGHT TURNS OFF 🌑</div>
+          </div>
+        </div>
+        <div class="modal-tips">
+          <h4>Multi-Device Compatibility:</h4>
+          <ul>
+            <li><strong>Front & Rear Cameras:</strong> Tap the "Flip" button on phones to switch cameras.</li>
+            <li><strong>Haptic Feedback:</strong> Supported smartphones vibrate softly on each toggle.</li>
+            <li><strong>AI Efficiency:</strong> Automatically runs the lightweight mobile-tuned model on phones for high FPS and long battery life.</li>
+            <li><strong>Privacy:</strong> 100% on-device AI processing — no video ever leaves your phone or computer.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="gotItBtn">Got It, Let's Control!</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Notification Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Application Scripts -->
+  <script src="js/audio.js"></script>
+  <script src="js/handDetector.js"></script>
+  <script src="js/lampRenderer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
